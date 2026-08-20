@@ -691,6 +691,15 @@ class MessageQueue:
                     # Release the processor to other threads
                     sched_yield()
 
+                    # Readers may be in the SpinCondition cold-path (blocked
+                    # on zmq.Poller.poll()) waiting for a write notification.
+                    # Without waking them here, the writer would spin forever:
+                    # readers never wake to ACK the ring buffer slot, the
+                    # writer never exits acquire_write to call notify(), and
+                    # readers stay stuck in the cold path.
+                    if self._spin_condition is not None:
+                        self._spin_condition.notify()
+
                     # if we time out, raise an exception
                     elapsed = time.monotonic() - start_time
                     if timeout is not None and elapsed > timeout:
